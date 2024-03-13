@@ -2034,8 +2034,6 @@ static int rockchip_display_probe(struct udevice *dev)
 
 		if(enable_panel_tp_node(s) < 0){
 			printf("%s enable_panel_tp_node error\n", __func__);
-		}else{
-			printf("%s enable_panel_tp_node okay\n", __func__);
 		}
 
 		if (is_ports_node) { /* only vop2 will get into here */
