@@ -186,39 +186,7 @@ int fit_rollback_index_verify(const void *fit, uint32_t rollback_fd,
  */
 int fit_board_verify_required_sigs(void)
 {
-	uint8_t vboot = 0;
-
-#ifdef CONFIG_SPL_BUILD
-#if defined(CONFIG_SPL_ROCKCHIP_SECURE_OTP_V1) || \
-    defined(CONFIG_SPL_ROCKCHIP_SECURE_OTP_V2)
-	struct udevice *dev;
-
-	dev = misc_otp_get_device(OTP_S);
-	if (!dev)
-		return 1;
-
-	if (misc_otp_read(dev, OTP_SECURE_BOOT_ENABLE_ADDR, &vboot, 1)) {
-		printf("Can't read verified-boot flag\n");
-		return 1;
-	}
-
-	vboot = (vboot == 0xff);
-#endif
-#else /* !CONFIG_SPL_BUILD */
-#ifdef CONFIG_OPTEE_CLIENT
-	int ret;
-
-	ret = trusty_read_vbootkey_enable_flag(&vboot);
-	if (ret) {
-		printf("Can't read verified-boot flag, ret=%d\n", ret);
-		return 1;
-	}
-#endif
-#endif /* CONFIG_SPL_BUILD*/
-
-	printf("## Verified-boot: %d\n", vboot);
-
-	return vboot;
+	return 0;
 }
 
 #endif /* CONFIG_IS_ENABLED(FIT) */
