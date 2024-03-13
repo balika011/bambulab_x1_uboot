@@ -11,7 +11,7 @@ SUPPORT_LIST=`ls configs/*[r,p][x,v,k][0-9][0-9]*_defconfig`
 CMD_ARGS=$1
 
 ########################################### User can modify #############################################
-RKBIN_TOOLS=../rkbin/tools
+RKBIN_TOOLS=rkbin/tools
 CROSS_COMPILE_ARM32=../prebuilts/gcc/linux-x86/arm/gcc-linaro-6.3.1-2017.05-x86_64_arm-linux-gnueabihf/bin/arm-linux-gnueabihf-
 CROSS_COMPILE_ARM64=../prebuilts/gcc/linux-x86/aarch64/gcc-linaro-6.3.1-2017.05-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
 ########################################### User not touch #############################################
@@ -98,7 +98,7 @@ function prepare()
 		absolute_path=$(cd `dirname ${RKBIN_TOOLS}`; pwd)
 		RKBIN=${absolute_path}
 	else
-		echo "ERROR: No ../rkbin repository"
+		echo "ERROR: No rkbin repository"
 		exit 1
 	fi
 
