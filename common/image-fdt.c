@@ -35,7 +35,7 @@ static void fdt_error(const char *msg)
 	puts(" - must RESET the board to recover.\n");
 }
 
-#if defined(CONFIG_IMAGE_FORMAT_LEGACY)
+#if 0 //defined(CONFIG_IMAGE_FORMAT_LEGACY)
 static const image_header_t *image_get_fdt(ulong fdt_addr)
 {
 	const image_header_t *fdt_hdr = map_sysmem(fdt_addr, 0);
@@ -337,6 +337,11 @@ error:
 int boot_get_fdt(int flag, int argc, char * const argv[], uint8_t arch,
 		bootm_headers_t *images, char **of_flat_tree, ulong *of_size)
 {
+#if 1
+	*of_flat_tree = (char *) gd->fdt_blob;
+	*of_size = fdt_totalsize(*of_flat_tree);
+	return 0;
+#else
 #if defined(CONFIG_IMAGE_FORMAT_LEGACY)
 	const image_header_t *fdt_hdr;
 	ulong		load, load_end;
@@ -549,6 +554,7 @@ error:
 		return 0;
 	}
 	return 1;
+#endif
 }
 
 /*
