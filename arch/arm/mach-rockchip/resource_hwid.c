@@ -117,7 +117,7 @@ static int hwid_adc_find_dtb(const char *file_name)
 {
 	char *cell_name, *adc_tail, *adc_head, *p;
 	int prefix_len, chn_len, len;
-	int found = 0, margin = 30;
+	int found = 0, margin = 50;
 	int ret, channel;
 	char dev_name[32];
 	char adc_val[10];
