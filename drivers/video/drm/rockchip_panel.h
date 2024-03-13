@@ -16,6 +16,8 @@ struct rockchip_panel_funcs {
 	void (*unprepare)(struct rockchip_panel *panel);
 	void (*enable)(struct rockchip_panel *panel);
 	void (*disable)(struct rockchip_panel *panel);
+	int (*match)(struct rockchip_panel *panel);
+	int (*get_tp_node)(struct rockchip_panel *panel);
 };
 
 struct rockchip_panel {
@@ -26,6 +28,9 @@ struct rockchip_panel {
 	const void *data;
 
 	struct display_state *state;
+
+	bool is_matched;
+	char tp_node;
 };
 
 static inline void rockchip_panel_init(struct rockchip_panel *panel)
@@ -35,6 +40,28 @@ static inline void rockchip_panel_init(struct rockchip_panel *panel)
 
 	if (panel->funcs && panel->funcs->init)
 		panel->funcs->init(panel);
+}
+
+static inline int rockchip_panel_match(struct rockchip_panel *panel)
+{
+	if (!panel)
+		return -1;
+
+	if (panel->funcs && panel->funcs->match)
+	    return 	panel->funcs->match(panel);
+
+	return -1;
+}
+
+static inline int rockchip_panel_get_tp_node(struct rockchip_panel *panel)
+{
+	if (!panel)
+		return -1;
+
+	if (panel->funcs && panel->funcs->get_tp_node)
+	    return 	panel->funcs->get_tp_node(panel);
+
+	return -1;
 }
 
 static inline void rockchip_panel_prepare(struct rockchip_panel *panel)

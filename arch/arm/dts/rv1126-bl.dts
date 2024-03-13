@@ -1,0 +1,25 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Copyright (c) 2020 Fuzhou Rockchip Electronics Co., Ltd.
+ */
+
+/dts-v1/;
+#include "rv1126.dtsi"
+#include "rv1126-u-boot.dtsi"
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/media/rockchip_mipi_dsi.h>
+
+/ {
+	model = "Rockchip RV1126 Board BBL for uboot";
+	compatible = "rockchip,rv1126-evb", "rockchip,rv1126";
+};
+
+&uart2 {
+	status = "okay";
+};
+
+&emmc {
+	bus-width = <8>;
+	mmc-hs200-1_8v;
+	status = "okay";
+};

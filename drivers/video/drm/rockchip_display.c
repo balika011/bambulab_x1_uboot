@@ -1421,7 +1421,7 @@ static struct rockchip_panel *rockchip_of_find_panel(struct udevice *dev)
 		if (ofnode_read_u32(port, "reg", &reg))
 			continue;
 
-		if (reg != PORT_DIR_OUT)
+		if (reg == PORT_DIR_IN)
 			continue;
 
 		ofnode_for_each_subnode(ep, port) {
@@ -1446,7 +1446,7 @@ static struct rockchip_panel *rockchip_of_find_panel(struct udevice *dev)
 				panel_node = ofnode_get_parent(port_parent_node);
 			else
 				panel_node = ofnode_get_parent(_port);
-			if (!ofnode_valid(panel_node))
+			if (!ofnode_valid(panel_node) || !ofnode_is_available(panel_node))
 				continue;
 
 			ret = uclass_get_device_by_ofnode(UCLASS_PANEL,
@@ -1652,6 +1652,225 @@ static int rockchip_display_fixup_dts(void *blob)
 }
 #endif
 
+/**
+ * @brief read node property in fdt. like "panel@1" node, and "adc" property
+ *
+ * @param fdt_addr
+ * @param node_off
+ * @param prop like "adc"
+ * @param out_val
+ * @return int
+ */
+static int bbl_fdt_find_prop_u32(void *fdt_addr, int node_off, const char *prop, unsigned int *out_val){
+	int prop_off = fdt_first_property_offset(fdt_addr, node_off);
+	for (; prop_off >= 0; prop_off = fdt_next_property_offset(fdt_addr, prop_off)) {
+		const char *pname;
+		int sz;
+		const __be32 *p;
+
+		p = fdt_getprop_by_offset(fdt_addr, prop_off, &pname, &sz);
+		if (!p || pname == NULL) {
+			printf("get prop by offset err\n");
+			return -1;
+		}
+
+		if(strcmp(pname, prop) == 0){
+			printf("find prop: %s\n", prop);
+			*out_val = be32_to_cpup(p);
+			return 0;
+		}
+	}
+	return 0;
+}
+
+extern int adc_channel_single_shot(const char *name, int channel, unsigned int *data);
+
+static int bbl_match_panel_by_id(struct display_state *state){
+	void *blob = (void *)gd->fdt_blob;
+	// int node_offset;
+	struct connector_state *conn_state = &state->conn_state;
+	struct panel_state *panel_state = &state->panel_state;
+	const struct rockchip_connector *conn = conn_state->connector;
+	const struct rockchip_connector_funcs *conn_funcs = conn->funcs;
+	int ret;
+	static bool can_match = false;
+
+	if (conn_funcs->init) {
+		ret = conn_funcs->init(state);
+		if (ret){
+			printf("failed to init connector\n");
+			goto deinit;
+		}
+	}
+	if (state->conn_state.phy)
+		rockchip_phy_init(state->conn_state.phy);
+	if (conn->funcs->prepare)
+		conn->funcs->prepare(state);
+
+	struct udevice *panel_dev;
+	ofnode panel_node, ep, port_parent_node, port, ports = ofnode_path("/dsi@ffb30000/ports");
+	// will be ... 
+	// if()
+
+	ofnode_for_each_subnode(port, ports) {
+		u32 reg;
+		printf("for port: %s\n", port.np->full_name);
+
+		if (ofnode_read_u32(port, "reg", &reg))
+			continue;
+
+		if (reg == PORT_DIR_IN)
+			continue;
+
+		ep = ofnode_first_subnode(port);
+		if(!ofnode_valid(ep)){
+			printf("%s %d port: %s, get invaild subnode\n", __func__, __LINE__, port.np->full_name);
+			continue;
+		}
+
+		ofnode _ep, _port;
+		uint phandle;
+		bool is_ports_node = false;
+		printf("didou port: %s, ep:%s \n", port.np->full_name, ep.np->full_name);
+		if (ofnode_read_u32(ep, "remote-endpoint", &phandle)){
+			printf("%s read remote-endpoint faild\n", __func__);
+			continue;
+		}
+
+		_ep = ofnode_get_by_phandle(phandle);
+		if (!ofnode_valid(_ep)){
+			printf("%s _ep invalid\n", __func__);
+			continue;
+		}
+
+		_port = ofnode_get_parent(_ep);
+		if (!ofnode_valid(_port)){
+			printf("%s _port invalid\n", __func__);
+			continue;
+		}
+
+		port_parent_node = ofnode_get_parent(_port);
+		is_ports_node = strstr(port_parent_node.np->full_name, "ports") ? 1 : 0;
+		if (is_ports_node)
+			panel_node = ofnode_get_parent(port_parent_node);
+		else
+			panel_node = ofnode_get_parent(_port);
+		if (!ofnode_valid(panel_node)){
+			printf("%s panel_node invalid\n", __func__);
+			continue;
+		}
+
+		printf("didou panel: %s\n", panel_node.np->full_name);
+
+		// here will call dw_mipi_dsi_child_pre_probe
+		ret = uclass_get_device_by_ofnode(UCLASS_PANEL,
+				panel_node, &panel_dev);
+
+		struct rockchip_panel *panel = (struct rockchip_panel *)dev_get_driver_data(panel_dev);
+		if (panel){
+			panel->state = state;
+			panel_state->panel = panel;
+		}
+		if (panel_state->panel)
+			rockchip_panel_init(panel_state->panel);
+		printf("%s(%d) geting id\n", __func__, __LINE__);
+
+		if(rockchip_panel_match(panel_state->panel) != -1){
+			printf("dsi find panel id\n");
+			rockchip_panel_unprepare(panel_state->panel);
+			can_match = true;
+			break;
+		}else{
+			printf("panel->dev->node.np->full_name %s\n", panel->dev->node.np->full_name);
+			do_fixup_by_path(blob, panel->dev->node.np->full_name, "status", "disa", sizeof("disa"), 0);
+			rockchip_panel_unprepare(panel_state->panel);
+			rockchip_panel_disable(panel_state->panel);
+		}
+	}
+
+	if (conn_funcs->disable)
+	   conn_funcs->disable(state);
+
+	if (conn_funcs->unprepare)
+	   conn_funcs->unprepare(state);
+
+	if(!can_match){
+		printf("cannot match all panel, wait adc match\n");
+		return -1;
+	}
+
+	return 0;
+
+deinit:
+	if (conn_funcs->deinit)
+		conn_funcs->deinit(state);
+	return ret;
+}
+
+static int bbl_match_panel_by_adc(void){
+	void *blob = (void *)gd->fdt_blob;
+	int ret;
+	bool matched = false;
+	char default_path[64] = {0}; // for no panel match
+
+	int node_off = fdt_node_offset_by_compatible(blob, -1, "simple-panel-dsi");
+	for (; node_off >= 0; node_off = fdt_node_offset_by_compatible(blob, node_off, "simple-panel-dsi")) {
+		char path[64] = {"/dsi@ffb30000/"};
+		unsigned int sample_adc = 0, panel_adc = 0, margin = 50;
+		int len;
+		const char *panel_name = fdt_get_name(blob, node_off, &len);
+		strcat(path, panel_name);
+		if(default_path[0] == 0){
+			strcpy(default_path, path);
+		}
+
+		if(bbl_fdt_find_prop_u32(blob, node_off, "adc", &panel_adc) != 0){
+			printf("find node %s adc err\n", path);
+			continue;
+		}
+		if((ret = adc_channel_single_shot("saradc", 2, &sample_adc)) != 0){
+			printf("node %s sample adc err: %d\n", path, ret);
+			continue;
+		}
+
+		if(abs(sample_adc - panel_adc) < margin){
+			printf("match %s with sample_adc %d and panel_adc %d\n", path, sample_adc, panel_adc);
+			do_fixup_by_path(blob, path, "status", "okay", sizeof("okay"), 0);
+			matched = true;
+			break;
+		}else{
+			printf("dont match %s with sample_adc %d and panel_adc %d, continue..\n", path, sample_adc, panel_adc);
+			do_fixup_by_path(blob, path, "status", "disa", sizeof("disa"), 0);
+		}
+	}
+	if(!matched){
+		printf("panel match failed, use default node: %s\n", default_path);
+		do_fixup_by_path(blob, default_path, "status", "okay", sizeof("okay"), 0);
+		return -1;
+	}
+
+	return 0;
+}
+
+static int enable_panel_tp_node(struct display_state *state){
+	uint32_t phandle = 0;
+	void *blob = (void *)gd->fdt_blob;
+	int nodeoff = 0;
+	char path[30];
+
+	rockchip_panel_get_tp_node(state->panel_state.panel);
+	phandle = state->panel_state.panel->tp_node;
+	if((nodeoff = fdt_node_offset_by_phandle(blob, phandle)) < 0){
+		printf("get tp node offset by phandle faild, phandle = %d, ret = %d\n", phandle, nodeoff);
+		return -1;
+	}
+	fdt_get_path(blob, nodeoff, path, sizeof(path));
+	path[sizeof(path) - 1] = '\0';
+	printf("get tp node path: %s, setting status to okay...\n", path);
+	do_fixup_by_path(blob, path, "status", "okay", sizeof("okay"), 0);
+	return 0;
+}
+
 static int rockchip_display_probe(struct udevice *dev)
 {
 	struct video_priv *uc_priv = dev_get_uclass_priv(dev);
@@ -1749,10 +1968,6 @@ static int rockchip_display_probe(struct udevice *dev)
 		phy = rockchip_of_find_phy(conn_dev);
 
 		bridge = rockchip_of_find_bridge(conn_dev);
-		if (bridge)
-			panel = rockchip_of_find_panel(bridge->dev);
-		else
-			panel = rockchip_of_find_panel(conn_dev);
 
 		s = malloc(sizeof(*s));
 		if (!s)
@@ -1788,7 +2003,6 @@ static int rockchip_display_probe(struct udevice *dev)
 		}
 
 		s->blob = blob;
-		s->panel_state.panel = panel;
 		s->conn_state.node = conn_dev->node;
 		s->conn_state.dev = conn_dev;
 		s->conn_state.connector = conn;
@@ -1803,6 +2017,26 @@ static int rockchip_display_probe(struct udevice *dev)
 		s->crtc_state.crtc = crtc;
 		s->crtc_state.crtc_id = get_crtc_id(np_to_ofnode(ep_node));
 		s->node = node;
+
+		// match panel, we match by id first.
+		// if id match faild, 
+		// eg. (a) you want to match by adc, so you set id to 0xab 0xcd 0xef for never match.
+		// 	   (b) the panel not set id, so all id match faild.
+		// 	   (c) id read faild.
+		// then use adc to match.
+		ret = bbl_match_panel_by_id(s); // panel will be set inside
+		if(ret < 0){
+			printf("match panel by id faild, now use adc to match\n");
+			bbl_match_panel_by_adc();
+			panel = rockchip_of_find_panel(conn_dev);
+			s->panel_state.panel = panel;
+		}
+
+		if(enable_panel_tp_node(s) < 0){
+			printf("%s enable_panel_tp_node error\n", __func__);
+		}else{
+			printf("%s enable_panel_tp_node okay\n", __func__);
+		}
 
 		if (is_ports_node) { /* only vop2 will get into here */
 			ofnode vp_node = np_to_ofnode(port_node);

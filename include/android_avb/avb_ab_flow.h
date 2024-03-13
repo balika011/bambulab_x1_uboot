@@ -51,7 +51,7 @@ extern "C" {
 
 /* Maximum values for slot data */
 #define AVB_AB_MAX_PRIORITY 15
-#define AVB_AB_MAX_TRIES_REMAINING 7
+#define AVB_AB_MAX_TRIES_REMAINING 15
 
 /* Struct used for recording per-slot metadata.
  *

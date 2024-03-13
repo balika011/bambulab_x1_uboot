@@ -930,7 +930,7 @@ static bool unpackBoot(char *path)
 	bool ret = false;
 	FILE *inFile = fopen(path, "rb");
 	int entryNum, i;
-	char name[MAX_NAME_LEN];
+	char name[MAX_NAME_LEN+1];
 	rk_boot_entry *entrys;
 	if (!inFile) {
 		fprintf(stderr, "loader(%s) not found\n", path);

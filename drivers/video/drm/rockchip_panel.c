@@ -57,6 +57,12 @@ struct rockchip_panel_plat {
 
 	struct rockchip_panel_cmds *on_cmds;
 	struct rockchip_panel_cmds *off_cmds;
+
+	unsigned int id_regs_len;
+	unsigned int id_regs[3];
+	unsigned int id_targets[3];
+	unsigned int adc_target;
+	u32 tp_node;
 };
 
 struct rockchip_panel_priv {
@@ -361,6 +367,11 @@ static void panel_simple_disable(struct rockchip_panel *panel)
 	struct rockchip_panel_plat *plat = dev_get_platdata(panel->dev);
 	struct rockchip_panel_priv *priv = dev_get_priv(panel->dev);
 
+	if (dm_gpio_is_valid(&priv->reset_gpio))
+		dm_gpio_free(panel->dev, &priv->reset_gpio);
+	if (dm_gpio_is_valid(&priv->enable_gpio))
+		dm_gpio_free(panel->dev, &priv->enable_gpio);
+
 	if (!priv->enabled)
 		return;
 
@@ -381,12 +392,101 @@ static void panel_simple_init(struct rockchip_panel *panel)
 	conn_state->bus_format = panel->bus_format;
 }
 
+extern int adc_channel_single_shot(const char *name, int channel, unsigned int *data);
+
+static int rockchip_match_panel(struct rockchip_panel *panel)
+{
+	u8 buf[3] = {0, 0, 0};
+	int ret;
+	struct mipi_dsi_device *dsi = dev_get_parent_platdata(panel->dev);
+	struct rockchip_panel_plat *plat = dev_get_platdata(panel->dev);
+	struct rockchip_panel_priv *priv = dev_get_priv(panel->dev);
+	if (priv->power_supply)
+		regulator_set_enable(priv->power_supply, !plat->power_invert);
+
+	if (dm_gpio_is_valid(&priv->enable_gpio))
+		dm_gpio_set_value(&priv->enable_gpio, 1);
+	if (plat->delay.prepare)
+		mdelay(plat->delay.prepare);
+
+	if (dm_gpio_is_valid(&priv->reset_gpio))
+		dm_gpio_set_value(&priv->reset_gpio, 1);
+
+	if (plat->delay.reset)
+		mdelay(plat->delay.reset);
+
+	if (dm_gpio_is_valid(&priv->reset_gpio))
+		dm_gpio_set_value(&priv->reset_gpio, 0);
+
+	if (plat->delay.init)
+		mdelay(plat->delay.init);
+	// priv->prepared = true;
+
+	printf("%s: panel %s, plat->id_targets[0]: %d\n", __func__, panel->dev->name, plat->id_targets[0]);
+	printf("%s: plat->id_regs_len: %d\n", __func__, plat->id_regs_len);
+
+	for(int i = 0; i < plat->id_regs_len; i++){
+		ret = mipi_dsi_set_maximum_return_packet_size(dsi, 1);
+		printf("%s: mipi_dsi_set_maximum_return_packet_size, ret: %d\n", __func__, ret);
+
+		int retry_cnt = 5;
+		ret = -1;
+		while(ret < 0 && retry_cnt > 0){
+			retry_cnt--;
+			ret = mipi_dsi_dcs_read(dsi, plat->id_regs[i], &buf[i], 1);
+			printf("%s: mipi_dsi_dcs_read, ret: %d\n", __func__, ret);
+			if(ret < 0){
+				printf("%s: read panel reg: %d faild, ret: %d, retry: %d\n", __func__, plat->id_regs[i], ret, retry_cnt);
+			}
+		}
+		printf("%s: read panel reg: %d, val = %d, target = %d\n", __func__, plat->id_regs[i], buf[i], plat->id_targets[i]);
+	}
+
+	// if X1 panela or panelc, use adc to match.
+	if(buf[0] == 0x83 && buf[1] == 0x94 && buf[2] == 0x0f){
+		printf("The panel is X1 panela or panelc, wait use adc to match panel\n");
+		goto err;
+	}
+
+	for(int i = 0; i < plat->id_regs_len; i++){
+		if(buf[i] != plat->id_targets[i]){
+			printf("%s: cannot match panel reg: %d, val = %d, target = %d\n", __func__, plat->id_regs[i], buf[i], plat->id_targets[i]);
+			goto err;
+		}
+	}
+
+	printf("%s: success match panel: %s\n", __func__, panel->dev->name);
+	panel->is_matched = true;
+
+	return 0;
+
+err:
+	printf("%s: fail match panel: %s\n", __func__, panel->dev->name);
+	panel->is_matched = false;
+
+	return -1;
+}
+
+
+static int rockchip_get_tp_node(struct rockchip_panel *panel){
+	struct rockchip_panel_plat *plat = dev_get_platdata(panel->dev);
+
+	if(plat->tp_node == 0){
+		printf("%s: warnning: plat->tp_node = 0, do you set the tp-node in dts panel node?\n", __func__);
+	}
+	panel->tp_node = plat->tp_node;
+
+	return 0;
+}
+
 static const struct rockchip_panel_funcs rockchip_panel_funcs = {
 	.init = panel_simple_init,
 	.prepare = panel_simple_prepare,
 	.unprepare = panel_simple_unprepare,
 	.enable = panel_simple_enable,
 	.disable = panel_simple_disable,
+	.match = rockchip_match_panel,
+	.get_tp_node = rockchip_get_tp_node,
 };
 
 static int rockchip_panel_ofdata_to_platdata(struct udevice *dev)
@@ -408,6 +508,24 @@ static int rockchip_panel_ofdata_to_platdata(struct udevice *dev)
 	plat->bus_format = dev_read_u32_default(dev, "bus-format",
 						MEDIA_BUS_FMT_RBG888_1X24);
 	plat->bpc = dev_read_u32_default(dev, "bpc", 8);
+	plat->adc_target = dev_read_u32_default(dev, "adc", 0);
+	plat->id_regs_len = dev_read_u32_default(dev, "id_regs_len", 3);
+	plat->tp_node = dev_read_u32_default(dev, "tp-node", 0);
+	if(plat->tp_node == 0){
+		printf("%s: failed to parse tp-node\n", __func__);
+	}else{
+		printf("%s: parse tp-node = %d\n", __func__, plat->tp_node);
+	}
+
+	ret = dev_read_u32_array(dev, "id-regs", plat->id_regs, plat->id_regs_len);
+	if(ret != 0){
+		printf("%s: failed to parse panel id-regs, note id_regs_len = %d\n", __func__, plat->id_regs_len);
+	}
+
+	ret = dev_read_u32_array(dev, "id-targets", plat->id_targets, plat->id_regs_len);
+	if(ret != 0){
+		printf("%s: failed to parse panel id-targets, note id_regs_len = %d\n", __func__, plat->id_regs_len);
+	}
 
 	data = dev_read_prop(dev, "panel-init-sequence", &len);
 	if (data) {
