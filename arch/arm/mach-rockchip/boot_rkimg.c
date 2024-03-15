@@ -336,7 +336,7 @@ void setup_download_mode(void)
 			printf("entering recovery mode!\n");
 			env_set("reboot_mode", "recovery-key");
 		}
-	} else if (is_hotkey(HK_FASTBOOT)) {
+	} else if (is_hotkey(HK_FASTBOOT) || key_is_pressed(key_read(KEY_STOP))) {
 		env_set("reboot_mode", "fastboot");
 	}
 }
