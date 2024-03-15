@@ -7,11 +7,51 @@
 #include "rv1126.dtsi"
 #include "rv1126-u-boot.dtsi"
 #include <dt-bindings/input/input.h>
-#include <dt-bindings/media/rockchip_mipi_dsi.h>
 
 / {
 	model = "Rockchip RV1126 Board BBL for uboot";
 	compatible = "rockchip,rv1126-evb", "rockchip,rv1126";
+
+	gpio_keys: gpio-keys {
+		compatible = "gpio-keys";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		status = "okay";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&e_stop_pin &wakeup_pin>;
+		e_stop {
+			label = "GPIO Key Stop";
+			gpios = <&gpio2 RK_PC5 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_STOP>;
+			debounce-interval = <100>;
+		};
+
+		wakeup {
+			label = "GPIO Wake Up";
+			gpios = <&gpio0 RK_PA7 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_POWER>;
+			debounce-interval = <100>;
+			gpio-key,wakeup;
+		};
+	};
+};
+
+&pinctrl {
+	buttons {
+		e_stop_pin: e-stop-pin {
+			rockchip,pins = <2 RK_PC5 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+
+		wakeup_pin: wakeup-pin {
+			rockchip,pins = <0 RK_PA7 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+	};
+};
+
+&gpio0 {
+	u-boot,dm-pre-reloc;
+	status = "okay";
 };
 
 &uart2 {
