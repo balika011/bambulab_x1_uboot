@@ -1381,7 +1381,8 @@ int rockchip_show_logo(void)
 
 	list_for_each_entry(s, &rockchip_display_list, head) {
 		s->logo.mode = s->logo_mode;
-		if (load_bmp_logo(&s->logo, s->ulogo_name))
+		bool is_fastboot = !strstr(env_get("preboot"), "fastboot");
+		if (load_bmp_logo(&s->logo, is_fastboot ? s->ulogo_name : s->flogo_name))
 			printf("failed to display uboot logo\n");
 		else
 			ret = display_logo(s);
@@ -1982,6 +1983,9 @@ static int rockchip_display_probe(struct udevice *dev)
 		ret = ofnode_read_string_index(node, "logo,kernel", 0, &name);
 		if (!ret)
 			memcpy(s->klogo_name, name, strlen(name));
+		ret = ofnode_read_string_index(node, "logo,fastboot", 0, &name);
+		if (!ret)
+			memcpy(s->flogo_name, name, strlen(name));
 		ret = ofnode_read_string_index(node, "logo,mode", 0, &name);
 		if (!strcmp(name, "fullscreen"))
 			s->logo_mode = ROCKCHIP_DISPLAY_FULLSCREEN;

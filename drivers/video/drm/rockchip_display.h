@@ -181,6 +181,7 @@ struct display_state {
 
 	char ulogo_name[30];
 	char klogo_name[30];
+	char flogo_name[30];
 
 	struct logo_info logo;
 	int logo_mode;
